@@ -1,0 +1,75 @@
+name: Build with Disk Cleanup
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    # Step 1: Initial cleanup
+    - name: Initial disk cleanup
+      run: |
+        echo "=== Starting disk cleanup ==="
+        # Clean package manager cache
+        sudo apt-get clean
+        sudo apt-get autoclean
+        
+        # Remove Android SDK (if not needed)
+        if [ "${{ job.name }}" != "android-build" ]; then
+          sudo rm -rf /usr/local/lib/android || true
+        fi
+        
+        # Remove large tool caches
+        sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+        sudo rm -rf /opt/hostedtoolcache/go || true
+        
+        echo "=== Current disk usage ==="
+        df -h
+    
+    # Step 2: Checkout code
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    # Step 3: Setup Node.js (example)
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'  # Only caches npm, not entire node_modules
+        
+    # Step 4: Install dependencies efficiently
+    - name: Install dependencies
+      run: |
+        # Use npm ci instead of npm install (cleaner, faster)
+        npm ci --no-audit --prefer-offline
+        
+    # Step 5: Build
+    - name: Build project
+      run: |
+        npm run build
+        
+    # Step 6: Post-build cleanup
+    - name: Post-build cleanup
+      if: always()  # Runs even if build fails
+      run: |
+        echo "=== Cleaning up after build ==="
+        
+        # Remove heavy build artifacts if not needed later
+        rm -rf node_modules || true
+        rm -rf .next/cache || true  # For Next.js
+        rm -rf dist || true
+        
+        # Clean npm cache
+        npm cache clean --force
+        
+        echo "=== Final disk usage ==="
+        df -h
+        
+    # Step 7: Upload artifacts (if needed)
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist
+        path: dist/
+        if-no-files-found: ignore
